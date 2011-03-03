@@ -258,7 +258,8 @@ class xPDOManager_sqlsrv extends xPDOManager {
         $className = $this->xpdo->loadClass($class);
         if ($className) {
             $sql = "ALTER TABLE {$this->xpdo->getTableName($className)} DROP CONSTRAINT {$this->xpdo->escape($name)}";
-            if ($this->xpdo->exec($sql)) {
+            $result = $this->xpdo->exec($sql);
+            if ($result !== false || (!$result && $this->xpdo->errorCode() === '00000')) {
                 $result = true;
             } else {
                 $this->xpdo->log(xPDO::LOG_LEVEL_ERROR, "Error removing field {$class}->{$name}: " . print_r($this->xpdo->errorInfo(), true), '', __METHOD__, __FILE__, __LINE__);
@@ -271,8 +272,14 @@ class xPDOManager_sqlsrv extends xPDOManager {
         $result = false;
         $className = $this->xpdo->loadClass($class);
         if ($className) {
+            if ($defaultConstraints = $this->getDefaultConstraints($class, $name)) {
+                foreach ($defaultConstraints as $defaultConstraint) {
+                    $this->removeConstraint($class, $defaultConstraint);
+                }
+            }
             $sql = "ALTER TABLE {$this->xpdo->getTableName($className)} DROP COLUMN {$this->xpdo->escape($name)}";
-            if ($this->xpdo->exec($sql)) {
+            $result = $this->xpdo->exec($sql);
+            if ($result !== false || (!$result && $this->xpdo->errorCode() === '00000')) {
                 $result = true;
             } else {
                 $this->xpdo->log(xPDO::LOG_LEVEL_ERROR, "Error removing field {$class}->{$name}: " . print_r($this->xpdo->errorInfo(), true), '', __METHOD__, __FILE__, __LINE__);
@@ -295,7 +302,8 @@ class xPDOManager_sqlsrv extends xPDOManager {
                     $sql = "DROP INDEX {$this->xpdo->escape($name)} ON {$this->xpdo->getTableName($className)}";
                     break;
             }
-            if ($this->xpdo->exec($sql)) {
+            $result = $this->xpdo->exec($sql);
+            if ($result !== false || (!$result && $this->xpdo->errorCode() === '00000')) {
                 $result = true;
             } else {
                 $this->xpdo->log(xPDO::LOG_LEVEL_ERROR, "Error removing index {$name} from {$class}: " . print_r($this->xpdo->errorInfo(), true), '', __METHOD__, __FILE__, __LINE__);
@@ -366,5 +374,16 @@ class xPDOManager_sqlsrv extends xPDOManager {
             $result= implode(',', $indexset);
         }
         return $result;
+    }
+
+    private function getDefaultConstraints($class, $name, array $options = array()) {
+        $constraints = array();
+        $table = $this->xpdo->getTableName($class);
+        $sql = "SELECT name FROM sys.default_constraints WHERE parent_object_id = object_id(?) AND type = 'D' AND parent_column_id = (SELECT column_id FROM sys.columns WHERE object_id = object_id(?) AND name = ?)";
+        $stmt = $this->xpdo->prepare($sql);
+        if ($stmt && $stmt->execute(array($table, $table, $name))) {
+            $constraints = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        }
+        return $constraints;
     }
 }
